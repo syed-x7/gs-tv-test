@@ -19,7 +19,7 @@ td.r{font-weight:bold;width:170px}
 #ua{color:var(--mut);font-size:14px;margin-top:10px;max-width:60%;word-break:break-all}
 </style></head><body>
 <h1>GhostScreens TV video test</h1>
-<div class="sub">Runs 5 checks automatically (about 1 minute). Please take a photo of this screen when it says DONE.</div>
+<div class="sub">Runs 6 checks automatically (about 1–2 minutes). Please take a photo of this screen when it says DONE.</div>
 <table id="t"></table>
 <div id="done">Running…</div>
 <div id="ua"></div>
@@ -91,15 +91,42 @@ function viaIndexedDb(){
   });
 }
 
+
+var swServed=-1;
+function swCount(){
+  return new Promise(function(res){
+    var c=navigator.serviceWorker&&navigator.serviceWorker.controller;
+    if(!c){res(-1);return;}
+    var ch=new MessageChannel();
+    ch.port1.onmessage=function(e){res(e.data);};
+    c.postMessage({type:'count'},[ch.port2]);
+    setTimeout(function(){res(-2);},3000);
+  });
+}
+function viaServiceWorker(){
+  if(!('serviceWorker' in navigator))return Promise.reject('no serviceWorker support');
+  return navigator.serviceWorker.register('./sw.js',{scope:'./'}).then(function(){
+    if(navigator.serviceWorker.controller)return;
+    return new Promise(function(res,rej){
+      var t=setTimeout(function(){rej('service worker not controlling page');},8000);
+      navigator.serviceWorker.addEventListener('controllerchange',function(){clearTimeout(t);res();});
+    });
+  }).then(viaIndexedDb).then(function(blobUrl){
+    URL.revokeObjectURL(blobUrl); // only needed the bytes stored in IndexedDB
+    return './sw-media/clip.mp4?t='+Date.now();
+  });
+}
+
 var tests=[
   ['A. Video ON SCREEN first (old player way), direct source',function(){return DATA;},true],
   ['B. Video loaded OFF SCREEN first (new player way), direct source',function(){return DATA;},false],
   ['C. Video ON SCREEN first, from blob (cache-style URL)',toBlobUrl,true],
   ['D. Video OFF SCREEN first, from blob (cache-style URL)',toBlobUrl,false],
-  ['E. Video OFF SCREEN first, stored + read back from IndexedDB (exact player cache path)',viaIndexedDb,false]
+  ['E. Video OFF SCREEN first, stored + read back from IndexedDB (exact player cache path)',viaIndexedDb,false],
+  ['F. Video OFF SCREEN first, served from IndexedDB by a service worker at a normal https URL',viaServiceWorker,false]
 ];
 (function next(i){
-  if(i>=tests.length){document.getElementById('done').textContent='DONE: please take a photo of this screen';return;}
+  if(i>=tests.length){swCount().then(function(n){document.getElementById('done').textContent='DONE: please take a photo of this screen (F: service worker answered '+n+' video requests)';});return;}
   runTest(tests[i][0],tests[i][1],tests[i][2]).then(function(){next(i+1);});
 })(0);
 </script></body></html>
